@@ -1,0 +1,35 @@
+[
+  {
+    "ID": 102045371,
+    "Series": "БА",
+    "Number": "0363331",
+    "ValidFrom": "22.03.2018",
+    "ValidTo": "19.03.2019",
+    "Zone": "СК",
+    "Status": "Аннулирован",
+    "CancelDate": "06.10.2018",
+    "global_id": 859918560
+  },
+  {
+    "ID": 102045828,
+    "Series": "БА",
+    "Number": "0350240",
+    "ValidFrom": "01.02.2018",
+    "ValidTo": "30.01.2019",
+    "Zone": "СК",
+    "Status": "Аннулирован",
+    "CancelDate": "06.10.2018",
+    "global_id": 840165579
+  },
+  {
+    "ID": 106692827,
+    "Series": "БА",
+    "Number": "1941977",
+    "ValidFrom": "30.06.2025",
+    "ValidTo": "28.04.2026",
+    "Zone": "ТТК",
+    "Status": "Выдан",
+    "CancelDate": "",
+    "global_id": 5088085692
+  }
+]
