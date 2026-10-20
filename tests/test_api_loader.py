@@ -8,7 +8,7 @@ import pytest
 import requests
 import urllib3
 
-from conftest import TEST_KEY, FakeApi, make_response
+from conftest import TEST_KEY, FakeApi, SlowResponse, make_response
 from loader import ApiError, LoaderConfig, LoadValidationError, load_from_api
 from loader.api_client import parse_retry_after
 
@@ -105,8 +105,8 @@ def test_row_count_mismatch_is_invalid(config, make_client):
     api = FakeApi(rows=1500)
     real_get = api.get
 
-    def short_last_page(url, params, timeout):
-        response = real_get(url, params, timeout)
+    def short_last_page(url, params, timeout, stream=False):
+        response = real_get(url, params, timeout, stream)
         if url.endswith("/rows") and params["$skip"] == 1000:
             return make_response(200, json.loads(response.text)[:-1])
         return response
@@ -253,6 +253,76 @@ def test_broken_responses_in_a_row_fail_after_retry_limit(config, make_client, s
     assert len(api.calls) == config.max_retries + 1
     assert sleeps == [1.0, 2.0, 4.0]
     assert "ChunkedEncodingError" in str(err.value) and TEST_KEY not in str(err.value)
+
+
+# --- таймауты --------------------------------------------------------------
+
+def test_session_get_receives_connect_read_pair(config, make_client):
+    api = FakeApi(rows=1500)
+    cfg = replace(config, connect_timeout=7.0, read_timeout=33.0)
+    load_from_api(cfg, DAY, make_client(api, cfg))
+    assert api.request_kwargs  # карточка, /count и /rows
+    assert all(kw == {"timeout": (7.0, 33.0), "stream": True} for kw in api.request_kwargs)
+
+
+def test_timeout_defaults_and_env(monkeypatch):
+    cfg = LoaderConfig(api_key=TEST_KEY)
+    assert (cfg.connect_timeout, cfg.read_timeout, cfg.page_deadline) == (10.0, 60.0, 180.0)
+    monkeypatch.setenv("MOS_CONNECT_TIMEOUT", "5")
+    monkeypatch.setenv("MOS_READ_TIMEOUT", "30")
+    monkeypatch.setenv("MOS_PAGE_DEADLINE", "90")
+    cfg = LoaderConfig.from_env()
+    assert (cfg.connect_timeout, cfg.read_timeout, cfg.page_deadline) == (5.0, 30.0, 90.0)
+
+
+@pytest.mark.parametrize("field", ["connect_timeout", "read_timeout", "page_deadline"])
+def test_non_positive_timeout_is_rejected(field):
+    with pytest.raises(ValueError):
+        LoaderConfig(api_key=TEST_KEY, **{field: 0})
+
+
+def slow_rows(api, clock, step, times=None):
+    """Первые `times` запросов /rows (None - все) отвечают телом, растянутым на 4 * step секунд."""
+    real_get = api.get
+
+    def get(url, params, timeout, stream=False):
+        slow = times is None or len(api.rows_calls()) < times
+        if url.endswith("/rows") and slow:
+            api.calls.append((url, dict(params)))
+            return SlowResponse(api.data[params["$skip"] : params["$skip"] + params["$top"]], clock, step)
+        return real_get(url, params, timeout, stream)
+
+    api.get = get
+
+
+def test_slow_page_within_deadline_is_accepted(config, make_client, sleeps, clock):
+    api = FakeApi(rows=10)
+    slow_rows(api, clock, step=40.0, times=1)  # 4 куска по 40 с = 160 с < 180
+    path = load_from_api(config, DAY, make_client(api))
+    assert sleeps == [] and read_partition(path)[1] == api.data
+
+
+def test_slow_page_over_deadline_is_retried_then_succeeds(config, make_client, sleeps, clock, caplog):
+    api = FakeApi(rows=10)
+    slow_rows(api, clock, step=100.0, times=1)  # второй кусок уже за 180 с
+    path = load_from_api(config, DAY, make_client(api))
+
+    assert read_partition(path)[1] == api.data
+    assert len(api.rows_calls()) == 2 and sleeps == [1.0]
+    assert "PageDeadlineExceeded" in caplog.text and TEST_KEY not in caplog.text
+
+
+def test_slow_pages_fail_after_retry_limit(config, make_client, sleeps, clock):
+    api = FakeApi(rows=10)
+    slow_rows(api, clock, step=100.0)
+    with pytest.raises(ApiError) as err:
+        load_from_api(config, DAY, make_client(api))
+
+    assert len(api.rows_calls()) == config.max_retries + 1
+    assert sleeps == [1.0, 2.0, 4.0]
+    assert "PageDeadlineExceeded" in str(err.value) and TEST_KEY not in str(err.value)
+    assert err.value.status is None  # статус 200 недочитанного ответа не выдаём за итог
+    assert not (config.raw_root / "permits" / "load_date=2026-10-20").exists()
 
 
 def test_new_defaults_for_pause_and_backoff():

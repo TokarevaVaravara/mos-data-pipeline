@@ -23,8 +23,15 @@ log = logging.getLogger(__name__)
 T = TypeVar("T")
 
 RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
-# сетевые сбои и ответы, оборванные посреди передачи
+
+
+class PageDeadlineExceeded(Exception):
+    """Ответ не уложился в page_deadline (идёт, но слишком медленно)."""
+
+
+# сетевые сбои, ответы, оборванные посреди передачи, и слишком медленные ответы
 RETRYABLE_EXCEPTIONS = (
+    PageDeadlineExceeded,
     requests.ConnectionError,
     requests.Timeout,
     requests.exceptions.ChunkedEncodingError,
@@ -72,12 +79,14 @@ class MosApiClient:
         config: LoaderConfig,
         session: requests.Session | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        clock: Callable[[], float] = time.monotonic,
     ):
         if not config.api_key:
             raise ApiError("MOS_API_KEY не задан в окружении")
         self.config = config
         self.session = session or requests.Session()
         self.sleep = sleep
+        self.clock = clock
 
     def _dataset_url(self, suffix: str = "") -> str:
         return f"{self.config.base_url}/datasets/{self.config.dataset_id}{suffix}"
@@ -88,6 +97,15 @@ class MosApiClient:
             return min(retry_after, self.config.backoff_max)
         return min(self.config.backoff_base * 2**attempt, self.config.backoff_max)
 
+    def _read_body(self, response: requests.Response, started: float) -> None:
+        """Читает тело потоком; read_timeout ловит паузы, а здесь ограничено время всего ответа."""
+        chunks = []
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            chunks.append(chunk)
+            if self.clock() - started > self.config.page_deadline:
+                raise PageDeadlineExceeded()
+        response._content = b"".join(chunks)  # дальше .json() и .text работают как без stream
+
     def _get(self, suffix: str, params: dict | None = None, parse: Callable[[requests.Response], T] = _json) -> T:
         """GET с повторами. parse выполняется внутри цикла: тело, оборванное
         так, что не разбирается, - такой же повод для повтора, как обрыв сети."""
@@ -95,9 +113,19 @@ class MosApiClient:
         query = {**(params or {}), "api_key": self.config.api_key}
         for attempt in range(self.config.max_retries + 1):
             response = None
+            started = self.clock()
             try:
-                response = self.session.get(self._dataset_url(suffix), params=query, timeout=self.config.timeout)
+                response = self.session.get(
+                    self._dataset_url(suffix),
+                    params=query,
+                    timeout=(self.config.connect_timeout, self.config.read_timeout),
+                    stream=True,
+                )
+                self._read_body(response, started)
             except RETRYABLE_EXCEPTIONS as exc:
+                if response is not None:
+                    response.close()
+                    response = None  # тело не дочитано: ни статус, ни Retry-After не в счёт
                 problem = type(exc).__name__  # str(exc) может содержать URL с ключом
             else:
                 if response.status_code == 200:

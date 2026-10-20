@@ -17,7 +17,9 @@ class LoaderConfig:
 
     page_size: int = API_MAX_TOP
     request_pause: float = 0.5  # пауза между успешными запросами, сек
-    timeout: float = 60.0
+    connect_timeout: float = 10.0  # установка соединения, сек
+    read_timeout: float = 60.0  # пауза между порциями ответа, сек (не время всего ответа)
+    page_deadline: float = 180.0  # вся страница целиком: от запроса до последнего байта, сек
 
     max_retries: int = 5  # повторы на 429 / 5xx / сетевые ошибки / оборванные ответы
     backoff_base: float = 5.0  # пауза перед повтором: base * 2**attempt (5, 10, 20, 40, 60)
@@ -34,6 +36,8 @@ class LoaderConfig:
             raise ValueError(f"page_size должен быть в диапазоне 1..{API_MAX_TOP}")
         if self.count_tolerance < 0:
             raise ValueError("count_tolerance не может быть отрицательным")
+        if min(self.connect_timeout, self.read_timeout, self.page_deadline) <= 0:
+            raise ValueError("таймауты должны быть положительными")
 
     @classmethod
     def from_env(cls, **overrides) -> "LoaderConfig":
@@ -44,6 +48,13 @@ class LoaderConfig:
         }
         if "MOS_REQUEST_PAUSE" in env:
             values["request_pause"] = float(env["MOS_REQUEST_PAUSE"])
+        for name, var in (
+            ("connect_timeout", "MOS_CONNECT_TIMEOUT"),
+            ("read_timeout", "MOS_READ_TIMEOUT"),
+            ("page_deadline", "MOS_PAGE_DEADLINE"),
+        ):
+            if var in env:
+                values[name] = float(env[var])
         if "MOS_COUNT_TOLERANCE" in env:
             values["count_tolerance"] = int(env["MOS_COUNT_TOLERANCE"])
         if "MOS_RAW_ROOT" in env:
