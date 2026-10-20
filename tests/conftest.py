@@ -39,6 +39,7 @@ class FakeApi:
         self.data = make_rows(rows)
         self.versions = list(versions)
         self.count_offset = count_offset  # /count = rows + count_offset
+        self.fail_at_skip: int | None = None  # /rows с этим $skip всегда обрывается
         self.failures: list[requests.Response | Exception] = []
         self.calls: list[tuple[str, dict]] = []
 
@@ -54,6 +55,8 @@ class FakeApi:
             return make_response(200, str(len(self.data) + self.count_offset))
         if url.endswith("/rows"):
             skip, top = int(params["$skip"]), int(params["$top"])
+            if skip == self.fail_at_skip:
+                raise requests.exceptions.ChunkedEncodingError("Response ended prematurely")
             if top > 1000:
                 return make_response(400, {"code": 400, "message": "Параметр $top не может принимать значение больше 1000."})
             return make_response(200, self.data[skip : skip + top])

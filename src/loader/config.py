@@ -16,11 +16,11 @@ class LoaderConfig:
     api_key: str = field(default="", repr=False)  # не печатаем ключ в repr/логах
 
     page_size: int = API_MAX_TOP
-    request_pause: float = 0.2  # пауза между успешными запросами, сек
+    request_pause: float = 0.5  # пауза между успешными запросами, сек
     timeout: float = 60.0
 
-    max_retries: int = 5  # повторы на 429 / 5xx / сетевые ошибки
-    backoff_base: float = 1.0  # пауза перед повтором: base * 2**attempt
+    max_retries: int = 5  # повторы на 429 / 5xx / сетевые ошибки / оборванные ответы
+    backoff_base: float = 5.0  # пауза перед повтором: base * 2**attempt (5, 10, 20, 40, 60)
     backoff_max: float = 60.0
     max_version_restarts: int = 3  # сколько раз перезапускать загрузку при смене версии
     max_pages: int | None = None  # пробный прогон: остановиться после N страниц

@@ -2,8 +2,11 @@ import json
 from dataclasses import replace
 from datetime import date
 
+import http.client
+
 import pytest
 import requests
+import urllib3
 
 from conftest import TEST_KEY, FakeApi, make_response
 from loader import ApiError, LoaderConfig, LoadValidationError, load_from_api
@@ -16,6 +19,12 @@ def read_partition(path):
     pages = sorted(path.glob("page_*.jsonl"))
     rows = [json.loads(line) for p in pages for line in p.read_text(encoding="utf-8").splitlines()]
     return pages, rows
+
+
+def assert_only_hidden_staging_left(partition):
+    """После падения рядом с партицией остаётся только скрытая временная папка (для --resume)."""
+    names = sorted(p.name for p in partition.parent.iterdir())
+    assert names == [f".{partition.name}.staging", partition.name]
 
 
 # --- пагинация -------------------------------------------------------------
@@ -89,7 +98,7 @@ def test_version_keeps_changing_fails_and_keeps_old_partition(config, make_clien
         load_from_api(config, DAY, make_client(api))
 
     assert sorted(p.read_bytes() for p in good.iterdir()) == before
-    assert not list(good.parent.glob(".*"))  # временные папки убраны
+    assert_only_hidden_staging_left(good)
 
 
 def test_row_count_mismatch_is_invalid(config, make_client):
@@ -128,7 +137,7 @@ def test_shortfall_above_tolerance_fails_and_keeps_old_partition(config, make_cl
         load_from_api(replace(config, count_tolerance=2), DAY, make_client(api))
 
     assert sorted(p.read_bytes() for p in good.iterdir()) == before
-    assert not list(good.parent.glob(".*"))
+    assert_only_hidden_staging_left(good)
 
 
 def test_excess_rows_fail_even_with_large_tolerance(config, make_client):
@@ -216,6 +225,39 @@ def test_5xx_and_network_errors_are_retried(config, make_client, sleeps):
     api.failures = [make_response(503, "unavailable"), requests.ConnectionError("reset")]
     load_from_api(config, DAY, make_client(api))
     assert sleeps == [1.0, 2.0]
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [
+        requests.exceptions.ChunkedEncodingError("Response ended prematurely"),
+        urllib3.exceptions.ProtocolError("Response ended prematurely"),
+        http.client.IncompleteRead(b"[{", 500),
+        make_response(200, '[{"global_id": 1, "Cells": {"ID"'),  # тело оборвано, JSON не разбирается
+    ],
+    ids=["chunked", "protocol", "incomplete_read", "truncated_json"],
+)
+def test_broken_response_is_retried(config, make_client, sleeps, broken):
+    api = FakeApi(rows=1500)
+    api.failures = [broken]
+    path = load_from_api(config, DAY, make_client(api))
+    assert sleeps == [1.0, 0.01]  # повтор после обрыва + обычная пауза между страницами
+    assert read_partition(path)[1] == api.data
+
+
+def test_broken_responses_in_a_row_fail_after_retry_limit(config, make_client, sleeps):
+    api = FakeApi(rows=10)
+    api.failures = [requests.exceptions.ChunkedEncodingError(f"url?api_key={TEST_KEY}")] * 10
+    with pytest.raises(ApiError) as err:
+        load_from_api(config, DAY, make_client(api))
+    assert len(api.calls) == config.max_retries + 1
+    assert sleeps == [1.0, 2.0, 4.0]
+    assert "ChunkedEncodingError" in str(err.value) and TEST_KEY not in str(err.value)
+
+
+def test_new_defaults_for_pause_and_backoff():
+    cfg = LoaderConfig(api_key=TEST_KEY)
+    assert (cfg.request_pause, cfg.backoff_base, cfg.backoff_max) == (0.5, 5.0, 60.0)
 
 
 def test_retries_exhausted_raise_api_error(config, make_client, sleeps):

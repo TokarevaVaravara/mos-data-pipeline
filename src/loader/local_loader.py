@@ -85,6 +85,7 @@ def iter_cells(files: Iterable[Path]) -> Iterator[dict]:
 def load_from_local_files(config: LoaderConfig, load_date: date) -> Path:
     files = iter_source_files(config.local_source_dir)
     with PartitionWriter(config.raw_root, config.dataset_name, load_date) as writer:
+        writer.reset()
         page: list[dict] = []
         for cells in iter_cells(files):
             page.append({"global_id": cells["global_id"], "Number": len(page) + 1, "Cells": cells})

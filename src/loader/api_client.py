@@ -5,20 +5,32 @@
 """
 from __future__ import annotations
 
+import http.client
 import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Callable
+from typing import Callable, TypeVar
 
 import requests
+import urllib3
 
 from .config import LoaderConfig
 
 log = logging.getLogger(__name__)
 
+T = TypeVar("T")
+
 RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
+# сетевые сбои и ответы, оборванные посреди передачи
+RETRYABLE_EXCEPTIONS = (
+    requests.ConnectionError,
+    requests.Timeout,
+    requests.exceptions.ChunkedEncodingError,
+    urllib3.exceptions.ProtocolError,
+    http.client.IncompleteRead,
+)
 
 
 class ApiError(RuntimeError):
@@ -50,6 +62,10 @@ def parse_retry_after(value: str | None, now: datetime | None = None) -> float |
     return max(0.0, (when - now).total_seconds())
 
 
+def _json(response: requests.Response):
+    return response.json()
+
+
 class MosApiClient:
     def __init__(
         self,
@@ -72,21 +88,27 @@ class MosApiClient:
             return min(retry_after, self.config.backoff_max)
         return min(self.config.backoff_base * 2**attempt, self.config.backoff_max)
 
-    def _get(self, suffix: str, params: dict | None = None) -> requests.Response:
+    def _get(self, suffix: str, params: dict | None = None, parse: Callable[[requests.Response], T] = _json) -> T:
+        """GET с повторами. parse выполняется внутри цикла: тело, оборванное
+        так, что не разбирается, - такой же повод для повтора, как обрыв сети."""
         what = f"GET /datasets/{self.config.dataset_id}{suffix} {params or ''}"
         query = {**(params or {}), "api_key": self.config.api_key}
         for attempt in range(self.config.max_retries + 1):
             response = None
             try:
                 response = self.session.get(self._dataset_url(suffix), params=query, timeout=self.config.timeout)
-            except (requests.ConnectionError, requests.Timeout) as exc:
-                problem = type(exc).__name__
+            except RETRYABLE_EXCEPTIONS as exc:
+                problem = type(exc).__name__  # str(exc) может содержать URL с ключом
             else:
                 if response.status_code == 200:
-                    return response
-                if response.status_code not in RETRYABLE_STATUSES:
+                    try:
+                        return parse(response)
+                    except ValueError as exc:  # JSONDecodeError, int("") и т.п.
+                        problem = f"тело ответа не разобралось ({type(exc).__name__})"
+                elif response.status_code not in RETRYABLE_STATUSES:
                     raise ApiError(f"{what}: HTTP {response.status_code}: {response.text[:300]}", response.status_code)
-                problem = f"HTTP {response.status_code}"
+                else:
+                    problem = f"HTTP {response.status_code}"
             if attempt == self.config.max_retries:
                 status = response.status_code if response is not None else None
                 raise ApiError(f"{what}: {problem}, попыток: {attempt + 1}", status)
@@ -96,12 +118,12 @@ class MosApiClient:
         raise AssertionError("unreachable")
 
     def get_meta(self) -> DatasetMeta:
-        card = self._get("").json()
-        count = int(self._get("/count").text)
+        card = self._get("")
+        count = self._get("/count", parse=lambda r: int(r.text))
         return DatasetMeta(version=str(card["VersionNumber"]), count=count)
 
     def get_rows(self, skip: int, top: int) -> list[dict]:
-        rows = self._get("/rows", {"$skip": skip, "$top": top}).json()
+        rows = self._get("/rows", {"$skip": skip, "$top": top})
         if not isinstance(rows, list):
             raise ApiError(f"/rows вернул {type(rows).__name__}, ожидался список")
         return rows
