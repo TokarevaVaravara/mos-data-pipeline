@@ -166,6 +166,27 @@ def test_active_permits_daily_equals_brute_force(loaded, db):
     assert rows(db, "SELECT day, zone, active_permits FROM mart.active_permits_daily ORDER BY 1, 2") == brute
 
 
+def test_cancelled_before_start_contributes_nothing(loaded, db):
+    from db.sql_files import apply
+
+    before = rows(db, "SELECT day, zone, active_permits FROM mart.active_permits_daily ORDER BY 1, 2")
+    # отмена за день до начала (вклад 0) и отмена в день начала (действует ровно этот день)
+    db.execute("""
+        INSERT INTO clean.permits (global_id, id, series, number, valid_from, valid_to, zone, status, cancel_date,
+                                   cancelled_before_start, status_cancel_mismatch, id_conflict, source_load_date)
+        VALUES (100, 100, 'БА', '100', '2024-01-04', '2024-12-31', 'ТТК', 'Аннулирован', '2024-01-03',
+                true, false, false, '2026-10-21'),
+               (101, 101, 'БА', '101', '2024-01-04', '2024-12-31', 'МКАД', 'Аннулирован', '2024-01-04',
+                false, false, false, '2026-10-21')""")
+    apply(SETTINGS, "marts")
+
+    after = rows(db, "SELECT day, zone, active_permits FROM mart.active_permits_daily ORDER BY 1, 2")
+    assert min(n for *_, n in after) >= 0
+    assert [r for r in after if r[1] != "МКАД"] == before  # строка 100 ничего не добавила
+    mkad = {d: n for d, z, n in after if z == "МКАД"}
+    assert mkad[date(2024, 1, 4)] == 1 and sum(mkad.values()) == 1  # строка 101 - ровно один день
+
+
 def test_cancel_rate_by_zone_month(loaded, db):
     got = rows(db, "SELECT month, zone, permits, cancelled, cancel_rate::float8 FROM mart.cancel_rate_by_zone_month "
                    "ORDER BY 1, 2")
