@@ -9,3 +9,6 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+
+# Временные файлы Spark (spark.local.dir)
+.spark-tmp/
