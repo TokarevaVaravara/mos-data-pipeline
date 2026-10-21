@@ -14,7 +14,7 @@ DAY = date(2026, 10, 20)
 
 def read_partition(path):
     pages = sorted(path.glob("page_*.jsonl"))
-    return [p.name for p in pages], [json.loads(l) for p in pages for l in p.read_text(encoding="utf-8").splitlines()]
+    return [p.name for p in pages], [json.loads(line) for p in pages for line in p.read_text(encoding="utf-8").splitlines()]
 
 
 def staging_of(config):

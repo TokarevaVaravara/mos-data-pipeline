@@ -2,7 +2,9 @@
 
 Нужен запущенный Postgres (docker compose up -d) и POSTGRES_* в окружении или .env.
 Тесты работают в отдельной базе <POSTGRES_DB>_test и пересоздают схемы перед каждым тестом.
+Без Postgres модуль пропускается; при PG_TESTS_REQUIRED=1 (CI) - падает, чтобы пропуск не скрыл ошибку.
 """
+import os
 from datetime import date
 from decimal import Decimal
 
@@ -37,6 +39,8 @@ def pg_settings():
                 conn.execute(f'CREATE DATABASE "{test_db}"')
         return admin.with_db(test_db)
     except Exception as exc:  # noqa: BLE001 - нет настроек или Postgres не запущен
+        if os.environ.get("PG_TESTS_REQUIRED") == "1":
+            raise
         pytest.skip(f"PostgreSQL недоступен: {type(exc).__name__}", allow_module_level=True)
 
 

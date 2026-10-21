@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import socket
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,23 @@ from loader import LoaderConfig, MosApiClient
 
 FIXTURES = Path(__file__).parent / "fixtures"
 TEST_KEY = "test-secret-key-123"
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+@pytest.fixture(autouse=True)
+def no_api_key_no_network(monkeypatch):
+    """Настоящий ключ тестам не нужен, а Python-код тестов ходит только на localhost
+    (Postgres, шлюз py4j). Выход наружу, в т.ч. на apidata.mos.ru, - ошибка теста."""
+    monkeypatch.delenv("MOS_API_KEY", raising=False)
+    real_connect = socket.socket.connect
+
+    def guarded_connect(sock, address):
+        host = address[0] if isinstance(address, tuple) else None
+        if sock.family != socket.AF_UNIX and host not in LOCAL_HOSTS:
+            raise RuntimeError(f"тест пытается выйти в сеть: {host}")
+        return real_connect(sock, address)
+
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
 
 
 def make_response(status: int, body=None, headers: dict | None = None) -> requests.Response:

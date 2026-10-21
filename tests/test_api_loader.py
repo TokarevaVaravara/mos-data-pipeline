@@ -1,8 +1,7 @@
+import http.client
 import json
 from dataclasses import replace
 from datetime import date
-
-import http.client
 
 import pytest
 import requests
