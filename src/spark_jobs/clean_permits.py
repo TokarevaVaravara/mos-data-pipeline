@@ -55,9 +55,13 @@ def build_spark(
     shuffle_partitions: int = 16,  # ~1 млн строк, 16 ядер; 200 по умолчанию - мелкие задачи
     local_dir: Path = PROJECT_ROOT / ".spark-tmp",  # временные файлы Spark - в проекте, не в /tmp
     app_name: str = "clean_permits",
+    extra_conf: dict[str, str] | None = None,
 ) -> SparkSession:
+    builder = SparkSession.builder
+    for key, value in (extra_conf or {}).items():
+        builder = builder.config(key, value)
     return (
-        SparkSession.builder.master(master)
+        builder.master(master)
         .appName(app_name)
         .config("spark.driver.memory", "4g")
         .config("spark.sql.shuffle.partitions", str(shuffle_partitions))

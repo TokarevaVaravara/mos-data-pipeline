@@ -1,0 +1,28 @@
+# Пока только PostgreSQL. Значения берутся из .env (см. .env.example).
+name: mos-data-pipeline
+
+services:
+  postgres:
+    image: postgres:16.15-alpine
+    container_name: mos-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?задайте POSTGRES_DB в .env}
+      POSTGRES_USER: ${POSTGRES_USER:?задайте POSTGRES_USER в .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
+    # внутри лимита 1g: буферы и память на сортировки (перцентили, окна по ~1 млн строк)
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "work_mem=32MB", "-c", "maintenance_work_mem=128MB"]
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"  # только localhost
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    mem_limit: 1g
+    shm_size: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  pgdata:
