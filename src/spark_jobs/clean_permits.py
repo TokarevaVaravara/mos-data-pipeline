@@ -117,7 +117,8 @@ def classify(raw: DataFrame) -> DataFrame:
         .withColumn("cancelled_before_start", F.coalesce(F.col("cancel_date") < F.col("valid_from"), F.lit(False)))
         .withColumn(
             "status_cancel_mismatch",
-            ((F.col("Status") == ISSUED) & ~F.col("cancel_empty")) | ((F.col("Status") == ANNULLED) & F.col("cancel_empty")),
+            ((F.col("Status") == ISSUED) & ~F.col("cancel_empty"))
+            | ((F.col("Status") == ANNULLED) & F.col("cancel_empty")),
         )
     )
 
@@ -191,7 +192,8 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="PySpark: raw -> clean/rejected для пропусков")
     parser.add_argument("--load-date", type=date.fromisoformat, required=True)
     parser.add_argument("--data-root", type=Path, default=Path("data"), help="где лежит raw/")
-    parser.add_argument("--out-root", type=Path, default=None, help="куда писать clean/rejected/quality (по умолчанию = data-root)")
+    parser.add_argument("--out-root", type=Path, default=None,
+                        help="куда писать clean/rejected/quality (по умолчанию = data-root)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 

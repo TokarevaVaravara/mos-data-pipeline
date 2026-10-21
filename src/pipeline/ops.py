@@ -96,7 +96,8 @@ def quality_gate(data_root: Path, load_date: str, max_rejected_share: float) -> 
     if report["load_date"] != load_date:
         problems.append(f"отчёт за {report['load_date']}, а не за {load_date}")
     if report["rows_raw"] != report["rows_clean"] + report["rows_rejected"]:
-        problems.append(f"raw {report['rows_raw']} != clean {report['rows_clean']} + rejected {report['rows_rejected']}")
+        problems.append(f"raw {report['rows_raw']} != clean {report['rows_clean']}"
+                        f" + rejected {report['rows_rejected']}")
     if share > max_rejected_share:
         problems.append(f"доля rejected {share:.4%} больше {max_rejected_share:.2%}")
     if problems:
@@ -108,7 +109,8 @@ def quality_gate(data_root: Path, load_date: str, max_rejected_share: float) -> 
 def record_success(settings: PgSettings, data_root: Path, load_date: str, dag_run_id: str | None) -> dict:
     manifest, report = read_manifest(data_root, load_date), read_quality(data_root, load_date)
     row = {
-        "load_date": load_date, "dataset_version": manifest["version_after"], "count_reported": manifest["count_reported"],
+        "load_date": load_date, "dataset_version": manifest["version_after"],
+        "count_reported": manifest["count_reported"],
         "rows_raw": report["rows_raw"], "rows_clean": report["rows_clean"], "rows_rejected": report["rows_rejected"],
         "dag_run_id": dag_run_id,
     }

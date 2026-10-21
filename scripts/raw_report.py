@@ -209,12 +209,14 @@ def report(part: Partition, load_date: date, log_text: str | None) -> str:
         ("лишних строк (дублей)", gid["extra_rows"]),
         ("групп, совпадающих целиком", gid["same"]),
         ("групп с различиями", gid["different"]),
-        ("внешний global_id != Cells.global_id", sum(1 for r in part.rows if r["global_id"] != r["Cells"].get("global_id"))),
+        ("внешний global_id != Cells.global_id",
+         sum(1 for r in part.rows if r["global_id"] != r["Cells"].get("global_id"))),
     ])]
 
     out += ["## B5. _manifest.json\n"]
     if part.manifest:
-        out.append(table(["поле", "значение"], [(k, json.dumps(v, ensure_ascii=False)) for k, v in part.manifest.items()]))
+        out.append(table(["поле", "значение"],
+                         [(k, json.dumps(v, ensure_ascii=False)) for k, v in part.manifest.items()]))
     else:
         out.append("_manifest.json нет\n")
 
@@ -229,7 +231,8 @@ def report(part: Partition, load_date: date, log_text: str | None) -> str:
 
     for field in ("Status", "Zone"):
         counts = Counter(c.get(field) for c in cells)
-        out += [f"## B5. {field}\n", table([field, "строк", "доля"], [(show(k), v, pct(v, n)) for k, v in counts.most_common()])]
+        out += [f"## B5. {field}\n",
+                table([field, "строк", "доля"], [(show(k), v, pct(v, n)) for k, v in counts.most_common()])]
 
     dates = {f: [parse_date(c.get(f)) for c in cells] for f in DATE_FIELDS}
     rows = []
@@ -238,10 +241,13 @@ def report(part: Partition, load_date: date, log_text: str | None) -> str:
         empty = sum(1 for c in cells if is_empty(c.get(f)))
         bad = sum(1 for c, d in zip(cells, vals) if not is_empty(c.get(f)) and d is None)
         rows.append((f, min(good) if good else "-", max(good) if good else "-", empty, bad))
-    out += ["## B5. Даты (ДД.ММ.ГГГГ)\n", table(["поле", "минимум", "максимум", "пустых", "непустых, не разбирается"], rows)]
+    out += ["## B5. Даты (ДД.ММ.ГГГГ)\n",
+            table(["поле", "минимум", "максимум", "пустых", "непустых, не разбирается"], rows)]
 
-    issued_cancelled = [i for i, c in enumerate(cells) if c.get("Status") == "Выдан" and not is_empty(c.get("CancelDate"))]
-    annulled_open = [i for i, c in enumerate(cells) if c.get("Status") == "Аннулирован" and is_empty(c.get("CancelDate"))]
+    issued_cancelled = [i for i, c in enumerate(cells)
+                        if c.get("Status") == "Выдан" and not is_empty(c.get("CancelDate"))]
+    annulled_open = [i for i, c in enumerate(cells)
+                     if c.get("Status") == "Аннулирован" and is_empty(c.get("CancelDate"))]
     out += ["## B5. Status и CancelDate\n", table(["условие", "строк"], [
         ('Status = "Выдан" и CancelDate заполнен', len(issued_cancelled)),
         ('Status = "Аннулирован" и CancelDate пуст', len(annulled_open)),
@@ -257,8 +263,10 @@ def report(part: Partition, load_date: date, log_text: str | None) -> str:
     id_keys = [c.get("ID") for c in cells]
     pair_keys = [(c.get("Series"), c.get("Number")) for c in cells]
     out += ["## B5. Повторы ID и (Series, Number)\n", table(
-        ["ключ", "уникальных", "ключей с повторами", "лишних строк", "групп, совпадающих целиком", "групп с различиями"],
-        [(name, *dup_summary(cells, keys).values()) for name, keys in (("ID", id_keys), ("(Series, Number)", pair_keys))],
+        ["ключ", "уникальных", "ключей с повторами", "лишних строк", "групп, совпадающих целиком",
+         "групп с различиями"],
+        [(name, *dup_summary(cells, keys).values())
+         for name, keys in (("ID", id_keys), ("(Series, Number)", pair_keys))],
     )]
 
     tail = range(max(0, len(part.pages) - 3), len(part.pages))
@@ -268,9 +276,11 @@ def report(part: Partition, load_date: date, log_text: str | None) -> str:
     rows = []
     for pg in tail:
         ids = [r["global_id"] for r, p in zip(part.rows, part.page_of) if p == pg]
-        rows.append((part.pages[pg].name, len(ids), len(ids) - len(set(ids)), sum(1 for g in set(ids) if gid_pages[g] - {pg})))
+        rows.append((part.pages[pg].name, len(ids), len(ids) - len(set(ids)),
+                     sum(1 for g in set(ids) if gid_pages[g] - {pg})))
     out += ["## B5. Последняя и две предыдущие страницы\n",
-            table(["страница", "строк", "дублей global_id внутри", "global_id, встречающихся на других страницах"], rows)]
+            table(["страница", "строк", "дублей global_id внутри",
+                   "global_id, встречающихся на других страницах"], rows)]
 
     # --- 1. группы повторов ---
     id_groups, pair_groups = groups_by(id_keys), groups_by(pair_keys)
@@ -307,7 +317,8 @@ def report(part: Partition, load_date: date, log_text: str | None) -> str:
             table(["показатель", "значение"], [
                 (f"ValidFrom позже {load_date.isoformat()}", f"{future} ({pct(future, len(cancel_before))})"),
             ]),
-            table(["Zone", "строк", "доля"], [(show(z), v, pct(v, len(cancel_before))) for z, v in zones.most_common()])]
+            table(["Zone", "строк", "доля"],
+                  [(show(z), v, pct(v, len(cancel_before))) for z, v in zones.most_common()])]
 
     # --- 3. длительность ---
     durations = [(b - a).days for a, b in zip(vf, vt) if a and b]
@@ -315,7 +326,8 @@ def report(part: Partition, load_date: date, log_text: str | None) -> str:
             table(["показатель", "значение"], day_stats(durations, 99) + [
                 ("длиннее 400 дней", sum(1 for d in durations if d > 400)),
             ]),
-            table(["длительность, дней", "строк", "доля"], [(d, v, pct(v, len(durations))) for d, v in Counter(durations).most_common(10)])]
+            table(["длительность, дней", "строк", "доля"],
+                  [(d, v, pct(v, len(durations))) for d, v in Counter(durations).most_common(10)])]
 
     # --- 4. Status / CancelDate ---
     out += ["## 4. Несоответствие Status и CancelDate\n"]

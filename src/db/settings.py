@@ -37,7 +37,8 @@ class PgSettings:
     @classmethod
     def from_env(cls, env_file: Path | None = PROJECT_ROOT / ".env") -> "PgSettings":
         """Окружение важнее .env: так можно переопределить, не меняя файл."""
-        env = {**(_read_env_file(env_file) if env_file else {}), **{k: v for k, v in os.environ.items() if k in _KEYS and v}}
+        env = {**(_read_env_file(env_file) if env_file else {}),
+               **{k: v for k, v in os.environ.items() if k in _KEYS and v}}
         settings = cls(
             host=env.get("POSTGRES_HOST", cls.host),
             port=int(env.get("POSTGRES_PORT", cls.port)),
