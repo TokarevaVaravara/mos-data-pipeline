@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import time
 from datetime import date
 from pathlib import Path
@@ -63,7 +64,7 @@ def build_spark(
     return (
         builder.master(master)
         .appName(app_name)
-        .config("spark.driver.memory", "4g")
+        .config("spark.driver.memory", os.environ.get("SPARK_DRIVER_MEMORY", "4g"))  # в контейнере Airflow - 2g
         .config("spark.sql.shuffle.partitions", str(shuffle_partitions))
         .config("spark.local.dir", str(local_dir))
         .config("spark.sql.legacy.timeParserPolicy", "CORRECTED")  # иначе 1.02.2020 роняет задачу, а не даёт null
