@@ -325,9 +325,7 @@ sha256 отсортированных global_id в clean):
 только задача `check_version` с обращением к API (`airflow tasks test`): версия 1.6282, `/count` 984 234.
 
 **Линтер и тесты** (локально, теми же командами, что в CI, с отдельным `postgres:16-alpine`):
-`pytest` — 112 тестов прошли; `ruff check .` — 17 замечаний E501 (строки длиннее 120 в
-`scripts/raw_report.py`, `src/pipeline/ops.py`, `src/spark_jobs/clean_permits.py`, `src/db/settings.py`),
-поэтому задача `lint` пока завершится с ошибкой.
+`pytest` — 112 тестов прошли; `ruff check .` — замечаний нет.
 
 ## Особенности источника и ограничения
 
