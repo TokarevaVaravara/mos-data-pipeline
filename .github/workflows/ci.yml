@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install ruff (версия из requirements-dev.txt)
+        run: pip install "$(grep '^ruff==' requirements-dev.txt)"
+      - name: ruff check
+        run: ruff check .
+
+  test:
+    runs-on: ubuntu-24.04
+    env:
+      # Одноразовая база сервис-контейнера ниже, живёт только во время задачи: это не секреты.
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: mos_ci
+      POSTGRES_USER: mos_ci
+      POSTGRES_PASSWORD: mos_ci_password
+      PG_TESTS_REQUIRED: "1"  # без Postgres тесты падают, а не пропускаются
+      # MOS_API_KEY не задаётся: тесты используют фейковый API и не выходят в сеть (tests/test_isolation.py)
+    services:
+      postgres:
+        image: postgres:16-alpine
+        # контекст env здесь недоступен - те же значения, что в env задачи
+        env:
+          POSTGRES_DB: mos_ci
+          POSTGRES_USER: mos_ci
+          POSTGRES_PASSWORD: mos_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mos_ci -d mos_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Cache JDBC-драйвера (spark.jars.packages -> .spark-tmp/ivy)
+        uses: actions/cache@v4
+        with:
+          path: .spark-tmp/ivy
+          key: ivy-${{ hashFiles('src/db/settings.py') }}
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      # tests/dags не запускаются: им нужен Airflow 3.3.2 из образа docker/airflow/Dockerfile
+      # (Airflow, его constraints и /opt/project в контейнере), а не venv проекта.
+      # Они запускаются в контейнере: docker compose exec -w /opt/project airflow-scheduler python -m pytest tests/dags
+      - name: pytest (loader, cleaning, raw_report, postgres, pipeline ops)
+        run: >-
+          python -m pytest -v
+          tests/test_isolation.py
+          tests/test_api_loader.py tests/test_local_loader.py tests/test_resume.py tests/test_main.py
+          tests/test_clean_permits.py
+          tests/test_raw_report.py
+          tests/test_postgres.py tests/test_pipeline_ops.py

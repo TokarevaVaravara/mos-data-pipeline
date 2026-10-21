@@ -12,3 +12,10 @@ __pycache__/
 
 # Временные файлы Spark (spark.local.dir)
 .spark-tmp/
+
+# Логи Airflow
+logs/
+
+# Файлы секретов Docker (сейчас секрет MOS_API_KEY берётся из окружения, файла нет)
+secrets/
+*.secret
