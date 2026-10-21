@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -110,6 +111,24 @@ def config(tmp_path) -> LoaderConfig:
         raw_root=tmp_path / "raw",
         local_source_dir=tmp_path / "source",
     )
+
+
+@pytest.fixture(scope="session")
+def spark(tmp_path_factory):
+    """Одна SparkSession на весь прогон: конфиг (в т.ч. JDBC-драйвер) задаётся только при создании."""
+    from db.settings import PgSettings
+    from spark_jobs.clean_permits import build_spark
+    from spark_jobs.load_postgres import jdbc_conf
+
+    # py4j пишет info при сборке мусора на выходе, когда pytest уже закрыл потоки логов
+    logging.getLogger("py4j").setLevel(logging.WARNING)
+    session = build_spark(
+        master="local[2]", shuffle_partitions=2, local_dir=tmp_path_factory.mktemp("spark-local"),
+        app_name="tests", extra_conf=jdbc_conf(PgSettings()),
+    )
+    session.sparkContext.setLogLevel("ERROR")
+    yield session
+    session.stop()
 
 
 @pytest.fixture

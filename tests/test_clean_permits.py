@@ -1,6 +1,5 @@
 """Очистка raw -> clean/rejected: одинаковые проверки для Spark и pandas на маленькой партиции."""
 import json
-import logging
 
 import pandas as pd
 import pytest
@@ -66,18 +65,6 @@ def data_root(tmp_path):
     # соседняя партиция не должна попасть в чтение
     write_page(root / "raw" / "permits" / "load_date=2026-10-20" / "page_000000.jsonl", [("other", 999, 999, "ZZ", "1", "01.01.2020", "31.12.2020", "СК", "Выдан", "")])
     return root
-
-
-@pytest.fixture(scope="session")
-def spark(tmp_path_factory):
-    from spark_jobs.clean_permits import build_spark
-
-    # py4j пишет info при сборке мусора на выходе, когда pytest уже закрыл потоки логов
-    logging.getLogger("py4j").setLevel(logging.WARNING)
-    session = build_spark(master="local[2]", shuffle_partitions=2, local_dir=tmp_path_factory.mktemp("spark-local"), app_name="tests")
-    session.sparkContext.setLogLevel("ERROR")
-    yield session
-    session.stop()
 
 
 @pytest.fixture(params=["spark", "pandas"])
